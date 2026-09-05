@@ -1,0 +1,29 @@
+# Rust
+/target/
+Cargo.lock
+
+# C++ build artifacts
+tests/*.exe
+tests/*.o
+tests/*.dll
+cpp/*.o
+
+# C# build outputs
+csharp/**/bin/
+csharp/**/obj/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Editor / OS
+.vscode/
+.idea/
+*.suo
+Thumbs.db
+
+# RTorch runtime temp DLLs (compiled by session tests)
+*.dll
+*.bin
+*.log
+!include/**

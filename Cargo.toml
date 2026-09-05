@@ -1,0 +1,36 @@
+[package]
+name = "rtorch_api"
+# Cargo requires a legal semver here (>= major.minor.patch, no leading zeros, no
+# 4-part date). We use a marker in that shape. The human-facing release version is
+# the date-based `YYYY.MM.DD.N` (e.g. 2026.09.06.1) shown in README / GitHub Releases.
+version = "2696.0.0"
+edition = "2024"
+description = "RTorch_for_models_api — the cross-language plugin layer over RTorch. Exposes a stable C ABI (tensor / formula session / RTW / rules) for Rust-safe, C++-fast, Python-glue, C#-rich consumers. RTorch core stays compute-only (the compute here is RTorch's); this plugin sits on top and provides the richest interface plus a plug-in rule system for the community."
+
+# cdylib -> RTorch_for_models_api.dll (community-facing DLL; name set via [[lib]] name).
+# rlib  -> for the Rust-safe shell + tests.
+[lib]
+name = "rtorch_for_models_api"
+crate-type = ["rlib", "cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+# RTorch compute layer (compute-only; we only reuse its public API, never modify it).
+rtorch = { path = "..\\rtorch" }
+
+[dev-dependencies]
+# Same RTorch crate, so the C-ABI smoke tests can build a real Model/Memory payload
+# via `rtorch::rtw::{encode_model, encode_memory}` before decoding through the C ABI.
+rtorch = { path = "..\\rtorch" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+# Must be "unwind", not "abort": the safe shell (ffi_guard) relies on
+# catch_unwind to convert an internal Rust panic into a C ABI error code instead
+# of aborting the host process across the `extern "C"` boundary. With
+# panic="abort" catch_unwind becomes a no-op in release and a panic would call
+# abort() and kill the whole app — breaking the "panic never crosses C" contract.
+panic = "unwind"
+strip = true
