@@ -12,18 +12,15 @@ without talking to Rust directly, and can register plug-in **rules**.
 
 ## Versioning
 
-RTorch_for_models_api uses a **date-based release version**: `YYYY.MM.DD.N`.
+RTorch_for_models_api uses **Semantic Versioning**. The current version is **`0.0.1`**.
 
-- `2026.09.06.1` = the **1st** version released **on 2026-09-06**.
-- The final `.N` is the **ordinal of the day** — the 2nd release on the same day is
-  `...2`, and so on.
-- On a new calendar day the ordinal **resets to `.1`** (it does not accumulate):
-  e.g. `2026.09.07.1` is the first release on 09-07, regardless of how many were
-  published on 09-06.
+- `MAJOR.MINOR.PATCH`; `0.0.1` is the first development release.
+- PATCH = bug-fix / compatible change; MINOR = backward-compatible feature;
+  MAJOR = breaking change.
 
-This is independent of the RTorch compute layer's own number (RTorch uses its own,
-e.g. `0.1.4`). The date+ordinal marks *when* an RTorch_for_models_api artifact was
-produced and which release of that day it is.
+The RTorch *compute layer* (the project this plugin sits on top of) uses its own
+**date-based** release number `YYYY.MM.DD.N` (e.g. `2026.09.06.1`) — the two are
+separate and not tied to each other.
 
 ## What it exposes
 

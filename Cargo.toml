@@ -1,9 +1,6 @@
 [package]
 name = "rtorch_api"
-# Cargo requires a legal semver here (>= major.minor.patch, no leading zeros, no
-# 4-part date). We use a marker in that shape. The human-facing release version is
-# the date-based `YYYY.MM.DD.N` (e.g. 2026.09.06.1) shown in README / GitHub Releases.
-version = "2696.0.0"
+version = "0.0.1"
 edition = "2024"
 description = "RTorch_for_models_api — the cross-language plugin layer over RTorch. Exposes a stable C ABI (tensor / formula session / RTW / rules) for Rust-safe, C++-fast, Python-glue, C#-rich consumers. RTorch core stays compute-only (the compute here is RTorch's); this plugin sits on top and provides the richest interface plus a plug-in rule system for the community."
 
