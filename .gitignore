@@ -1,3 +1,6 @@
+# Release artifacts (built DLL + bindings + zip; uploaded as GitHub Releases, not committed)
+/release/
+
 # Rust
 /target/
 Cargo.lock
