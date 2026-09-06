@@ -1,6 +1,6 @@
 [package]
 name = "rtorch_api"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 license = "LGPL-3.0-only"
 description = "RTorch_for_models_api — the cross-language plugin layer over RTorch. Exposes a stable C ABI (tensor / formula session / RTW / rules) for Rust-safe, C++-fast, Python-glue, C#-rich consumers. RTorch core stays compute-only (the compute here is RTorch's); this plugin sits on top and provides the richest interface plus a plug-in rule system for the community."
