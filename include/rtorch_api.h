@@ -132,8 +132,10 @@ float              rtorch_api_memory_frag_strength(const rtorch_api_memory* m, s
 // ---------------------------------------------------------------------------
 // Rule system — plug-in rules added by users (community extensibility).
 // ---------------------------------------------------------------------------
-typedef void (*rtorch_api_rule_fn)(const rtorch_api_blob* in, size_t n_in,
-                                   rtorch_api_blob* out, void* userdata);
+// The rule callback. Returns 0 = ok, non-zero = error; the rc propagates back to
+// the caller of rtorch_api_run_rule so a C rule can report failures.
+typedef int (*rtorch_api_rule_fn)(const rtorch_api_blob* in, size_t n_in,
+                                  rtorch_api_blob* out, void* userdata);
 
 // Register a rule `name` -> `fn`. Returns RTORCH_API_OK or error (dup name, etc).
 int  rtorch_api_register_rule(const char* name, rtorch_api_rule_fn fn, void* userdata);

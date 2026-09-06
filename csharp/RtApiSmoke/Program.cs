@@ -52,6 +52,7 @@ class Program
                     System.Runtime.InteropServices.Marshal.StructureToPtr(blob, outPtr, false);
                 }
             }
+            return RtorchApi.OK;
         };
         int rc = RtorchApi.RegisterRule("cs_rule", _ruleFn, IntPtr.Zero);
         AssertEq(RtorchApi.OK, rc, "register_rule rc");

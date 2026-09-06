@@ -41,6 +41,7 @@ def test_rule():
             val = ct.cast(userdata, ct.POINTER(ct.c_float)).contents.value
         ct.memmove(out_blob.contents.data, ct.byref(ct.c_float(val)), 4)
         out_blob.contents.len = 4
+        return 0
 
     rc = ra.register_rule("py_rule", my_rule, ud_addr)
     assert rc == ra.RTORCH_API_OK

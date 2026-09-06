@@ -286,6 +286,39 @@ RTorch_api 现在把它透给四语言:
 - C# `rtorch_api_session_execute` 用单元素 `Blob[]` 传 `blob* out`(blittable 数组
   首元素=指针,能工作但易误读);建议改 `ref Blob` 更清晰。
 
+## 代码问题清单修复(P0-P2, 用户评审)
+
+### P0(必须)
+- **P0-1 C Rule 回调 void→int**: `rtorch_api_rule_fn` 从 `void` 改返回 `int rc`,
+  `RuleCFn` 改 `-> i32`,`register_c` 把 callback 的 rc 透传(不再吞成 OK)。
+  header + rule.rs + 四语言绑定(cpp/python/csharp 回调签名同步)。测试
+  `rule_c_error_propagates` 验证非零 rc 透传。
+- **P0-2 run_rule 缺 NULL+count 检查**: 加 `in_blobs.is_null() && n_in>0 -> E_PARAM`。
+  测试 `run_rule_null_blobs_with_count_rejected`。
+- **P0-3 Registry 持锁执行 callback 死锁**: registry 改存 `Arc<RuleFn>`,run 时
+  锁内 clone Arc → 解锁 → 执行 callback(可重入、不阻塞他线程、防死锁)。
+  `RuleFn = + Send + Sync`(Arc 需 Sync);`SendPtr` 加 `unsafe impl Sync`。
+
+### P1(应改)
+- **P1-4 Model decode 防护不一致**: model_decode 加 `reject_oversize_payload`
+  (payload 总量超 RTW_MAX_SIZE 拒),与 memory_decode 对齐(叠 + `reject_oversized_count`)。
+  注: model 的 count 字段在 name 之后,不能复用 count-check(它读 byte[0..4]),故用总量检查。
+  底层 `rtw::decode_model`/`decode_memory` 均有 rtorch 侧 `validate_capacity` 独立防护。
+- **P1-5/6 userdata 生命周期 + 并发**: userdata = caller-owned,生命周期>=规则存活期
+  (API 契约,文档化,非 Rust bug);Arc 使 callback 可并发执行,unregister 待补(见待做)。
+
+### P2(架构/审查)
+- **P2-7 Session 真 persistent(load-once)**: 当前 load-dispatch-many。是否改持 persistent
+  handle 需 benchmark 后定(暂不改)。
+- **P2-8 统一 FFI pointer+len 检查**: 逐项核,大多已查;抓到一个漏——`register_rule`
+  未查 cf(null fn 指针),改 `cf: Option<RuleCFn>`(null→None→E_PARAM)。其余 tensor/session/
+  rtw/model/memory/run_rule 均查 null+len>0。
+- **P2-9 panic boundary**: 全部 extern "C" 导出走 `ffi_guard`/`ffi_guard_ptr`;callback 是 C 代码
+  不 panic;decode/alloc/string/CStr 均在 guard 内。
+- **P2-10 跨 DLL allocator**: `n`—"谁 alloc 谁 free"。tensor_data 返 borrowed,tensor_free 走
+  Rust Box;Blob.data 是 caller 提供(只读/写不 free);rtw_bytes 改 caller-buffer 无所有权转移。
+  无"Rust alloc→C free"或"C malloc→Rust Vec"错配。
+
 ## 构建/测试命令
 
 ```sh

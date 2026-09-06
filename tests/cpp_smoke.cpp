@@ -31,13 +31,14 @@ static void test_tensor() {
     printf("tensor OK\n");
 }
 
-// A C-ABI rule callback that writes its `userdata` (an int) as an f32.
-static void c_rule(const rtorch_api_blob* /*in*/, size_t /*n_in*/, rtorch_api_blob* out, void* userdata) {
+// A C-ABI rule callback that writes its `userdata` (an int) as an f32. Returns 0.
+static int c_rule(const rtorch_api_blob* /*in*/, size_t /*n_in*/, rtorch_api_blob* out, void* userdata) {
     float v = static_cast<float>(*static_cast<int*>(userdata));
     if (out->data && out->len >= sizeof(v)) {
         *static_cast<float*>(const_cast<void*>(out->data)) = v;
         out->len = sizeof(v);
     }
+    return 0;
 }
 
 static void test_rule() {

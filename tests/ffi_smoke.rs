@@ -100,7 +100,7 @@ fn rule_register_c_abi() {
     let mut userdata: i32 = 7;
     let rc = rtorch_api_register_rule(
         name.as_ptr() as *const _,
-        c_rule,
+        Some(c_rule),
         std::ptr::addr_of_mut!(userdata).cast(),
     );
     assert_eq!(rc, 0, "register_c rc={rc} ({})", rtorch_api_last_error_str());
@@ -116,19 +116,56 @@ fn rule_register_c_abi() {
     assert_eq!(out_blob.len, 4);
 }
 
+#[test]
+fn rule_c_error_propagates() {
+    // P0-1: a C rule callback that returns a non-zero rc must be surfaced by
+    // run_rule (the rc is no longer swallowed as success).
+    let name = b"m2_c_err\0";
+    let rc = rtorch_api_register_rule(name.as_ptr() as *const _, Some(c_rule_err), std::ptr::null_mut());
+    assert_eq!(rc, 0, "register rc={rc}");
+    let mut out_bytes = [0u8; 16];
+    let mut out_blob = Blob { data: out_bytes.as_mut_ptr() as *const _, len: 16 };
+    let rc2 = rtorch_api_run_rule(name.as_ptr() as *const _, std::ptr::null(), 0, &mut out_blob, std::ptr::null_mut());
+    assert_eq!(rc2, 7, "callback error rc must propagate, got {rc2}");
+}
+
+#[test]
+fn run_rule_null_blobs_with_count_rejected() {
+    // P0-2: in_blobs == NULL with n_in > 0 must be rejected (E_PARAM), not
+    // dereferenced (which would be UB).
+    let name = b"any\0";
+    let mut out_bytes = [0u8; 16];
+    let mut out_blob = Blob { data: out_bytes.as_mut_ptr() as *const _, len: 16 };
+    let rc = rtorch_api_run_rule(name.as_ptr() as *const _, std::ptr::null(), 100, &mut out_blob, std::ptr::null_mut());
+    assert_eq!(rc, 1, "null in_blobs with n_in>0 must be E_PARAM, got {rc}");
+}
+
 // The `extern "C"` rule callback, matching rtorch_api_rule_fn in the header.
+// Returns 0 = ok (so the rule's rc propagates out of run_rule).
 unsafe extern "C" fn c_rule(
     _in: *const Blob,
     _n_in: usize,
     out: *mut Blob,
     userdata: *mut std::ffi::c_void,
-) {
+) -> i32 {
     let ud = unsafe { &*(userdata.cast::<i32>()) };
     let val = [*ud as f32];
     unsafe {
         std::ptr::copy_nonoverlapping(val.as_ptr() as *const u8, (*out).data as *mut u8, 4);
         (*out).len = 4;
     }
+    0
+}
+
+// A rule that always returns a non-zero error code, so we can verify the rc
+// propagates back to run_rule (P0-1: C rule errors must not be swallowed).
+unsafe extern "C" fn c_rule_err(
+    _in: *const Blob,
+    _n_in: usize,
+    _out: *mut Blob,
+    _userdata: *mut std::ffi::c_void,
+) -> i32 {
+    7 // arbitrary non-zero error
 }
 
 #[test]

@@ -543,6 +543,19 @@ fn reject_oversized_count(buf: &[u8], min_entry: usize, what: &str) -> bool {
     }
 }
 
+/// A payload-total bound applied on all RTW payload decodes (model + memory).
+/// The RTW format caps an artifact at `RTW_MAX_SIZE` (32 TiB); a buffer beyond it
+/// is malformed and rejected up front as defense-in-depth. (rtorch's
+/// `validate_capacity` independently bounds count-driven allocations.)
+fn reject_oversize_payload(buf: &[u8], what: &str) -> bool {
+    if buf.len() as u64 > rtorch::rtw::RTW_MAX_SIZE {
+        err(RTORCH_API_E_PARSE, &format!("rtorch_api: {what} payload exceeds RTW_MAX_SIZE"));
+        true
+    } else {
+        false
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn rtorch_api_model_decode(payload: *const u8, len: usize) -> *mut OpaqueModel {
     ffi_guard_ptr(|| {
@@ -551,6 +564,12 @@ pub extern "C" fn rtorch_api_model_decode(payload: *const u8, len: usize) -> *mu
             return std::ptr::null_mut();
         }
         let buf = if len == 0 { &[][..] } else { unsafe { std::slice::from_raw_parts(payload, len) } };
+        // Payload-total upper bound (defense-in-depth; rtorch's validate_capacity
+        // independently bounds count-driven allocations). Model params count lives
+        // after the name field, so we use the total-size check, not the count check.
+        if reject_oversize_payload(buf, "model") {
+            return std::ptr::null_mut();
+        }
         match rtorch::rtw::decode_model(buf) {
             Ok(model) => Box::into_raw(Box::new(OpaqueModel { model })),
             Err(e) => {
@@ -646,6 +665,11 @@ pub extern "C" fn rtorch_api_memory_decode(payload: *const u8, len: usize) -> *m
             return std::ptr::null_mut();
         }
         let buf = if len == 0 { &[][..] } else { unsafe { std::slice::from_raw_parts(payload, len) } };
+        // Payload-total upper bound + count check (defense-in-depth; rtorch's
+        // validate_capacity independently bounds count-driven allocations).
+        if reject_oversize_payload(buf, "memory") {
+            return std::ptr::null_mut();
+        }
         // memory: each fragment >= 8B id + 4B state-len + min 1 float + 4B strength
         // (a v1 MemoryFragment is at least ~13 bytes; use a conservative 8).
         if reject_oversized_count(buf, 8, "memory") {
@@ -714,13 +738,18 @@ pub extern "C" fn rtorch_api_memory_frag_strength(m: *const OpaqueMemory, i: usi
 #[unsafe(no_mangle)]
 pub extern "C" fn rtorch_api_register_rule(
     name: *const std::ffi::c_char,
-    cf: crate::rule::RuleCFn,
+    cf: Option<crate::rule::RuleCFn>,
     userdata: *mut std::ffi::c_void,
 ) -> i32 {
     ffi_guard(|| {
         if name.is_null() {
             return err(RTORCH_API_E_PARAM, "rtorch_api: null rule name");
         }
+        // `Option<fn>` uses the null pointer to represent None, so a C NULL fn
+        // arrives here as None — reject it rather than call a null function pointer.
+        let Some(cf) = cf else {
+            return err(RTORCH_API_E_PARAM, "rtorch_api: null rule fn");
+        };
         let n = unsafe { std::ffi::CStr::from_ptr(name) }.to_string_lossy().to_string();
         crate::rule::register_c(&n, cf, userdata)
     })
@@ -752,6 +781,9 @@ pub extern "C" fn rtorch_api_run_rule(
     ffi_guard(|| {
         if name.is_null() || out.is_null() {
             return err(RTORCH_API_E_PARAM, "rtorch_api: null name/out");
+        }
+        if in_blobs.is_null() && n_in > 0 {
+            return err(RTORCH_API_E_PARAM, "rtorch_api: null in_blobs with n_in>0");
         }
         let n = unsafe { std::ffi::CStr::from_ptr(name) }.to_string_lossy().to_string();
         let blobs = if n_in == 0 {

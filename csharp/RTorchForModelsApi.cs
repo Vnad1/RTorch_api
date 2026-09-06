@@ -124,7 +124,7 @@ namespace RTorchApi
         // from native with a C array / struct pointer, and blittable IntPtr avoids
         // the marshaler reinterpreting an array as a single struct pointer.
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate void RuleFn(IntPtr inBlobs, ulong nIn, IntPtr outBlob, IntPtr userdata);
+        public delegate int RuleFn(IntPtr inBlobs, ulong nIn, IntPtr outBlob, IntPtr userdata);
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
         private static extern int rtorch_api_register_rule([MarshalAs(UnmanagedType.LPStr)] string name, IntPtr fn, IntPtr userdata);
         [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]

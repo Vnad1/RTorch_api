@@ -410,7 +410,8 @@ class Memory:
 # ---------------------------------------------------------------------------
 # Rule system.
 # ---------------------------------------------------------------------------
-_RuleCFn = _ct.CFUNCTYPE(None, _ct.POINTER(_Blob), _ct.c_size_t, _ct.POINTER(_Blob), _ct.c_void_p)
+# The rule callback returns an `int` (0 = ok, non-zero = error).
+_RuleCFn = _ct.CFUNCTYPE(_ct.c_int, _ct.POINTER(_Blob), _ct.c_size_t, _ct.POINTER(_Blob), _ct.c_void_p)
 
 
 def register_rule(name: str, fn, userdata=None) -> int:

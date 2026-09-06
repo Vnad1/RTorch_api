@@ -8,27 +8,32 @@
 //! different threads.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 /// A rule callback. `in` blobs in, writes into `out`, `userdata` opaque.
 /// Return 0 = ok, non-zero = error. Errored rules set last-error via the caller.
 ///
-/// `Send` is required because the global registry is shared across threads.
-pub type RuleFn = Box<dyn Fn(&[crate::ffi::Blob], &mut crate::ffi::Blob, *mut std::ffi::c_void) -> i32 + Send>;
+/// `Send`/`Sync` are required because the global registry (stored as `Arc`) is
+/// shared across threads and a callback may be executed concurrently.
+pub type RuleFn = Box<dyn Fn(&[crate::ffi::Blob], &mut crate::ffi::Blob, *mut std::ffi::c_void) -> i32 + Send + Sync>;
 
-/// The C-ABI rule function pointer, exactly matching `rtorch_api_rule_fn` in
-/// `include/rtorch_api.h`: `void (*)(const blob* in, size_t n_in, blob* out,
-/// void* userdata)`. `rtorch_api_blob` and [`crate::ffi::Blob`] share the same
-/// `#[repr(C)]` layout (`{ const void* data; size_t len; }`).
-pub type RuleCFn = unsafe extern "C" fn(*const crate::ffi::Blob, usize, *mut crate::ffi::Blob, *mut std::ffi::c_void);
+/// The C-ABI rule function pointer, matching `rtorch_api_rule_fn` in
+/// `include/rtorch_api.h`: `int (*)(const blob* in, size_t n_in, blob* out,
+/// void* userdata)`. Returns 0 = ok, non-zero = error. `rtorch_api_blob` and
+/// [`crate::ffi::Blob`] share the same `#[repr(C)]` layout
+/// (`{ const void* data; size_t len; }`).
+pub type RuleCFn = unsafe extern "C" fn(*const crate::ffi::Blob, usize, *mut crate::ffi::Blob, *mut std::ffi::c_void) -> i32;
 
-/// The rule registry: name -> callback. Global, cross-thread visible.
-static RULES: OnceLock<Mutex<HashMap<String, RuleFn>>> = OnceLock::new();
+/// The rule registry: name -> callback. Global, cross-thread visible. We store an
+/// `Arc` so `run` can clone the fn, release the registry lock, and execute the
+/// callback *outside* the lock — a callback may re-enter the registry (register/
+/// run) without deadlocking, and a long callback does not block other threads.
+static RULES: OnceLock<Mutex<HashMap<String, Arc<RuleFn>>>> = OnceLock::new();
 
 /// Re-export error bits used by ffi_guard / others.
 pub use crate::err::{err, last_error, set_last_error, RTORCH_API_E_IO, RTORCH_API_E_NOMEM, RTORCH_API_E_PARAM, RTORCH_API_E_PARSE, RTORCH_API_E_RT, RTORCH_API_OK};
 
-fn rules() -> &'static Mutex<HashMap<String, RuleFn>> {
+fn rules() -> &'static Mutex<HashMap<String, Arc<RuleFn>>> {
     RULES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -41,6 +46,7 @@ fn rules() -> &'static Mutex<HashMap<String, RuleFn>> {
 /// only makes the pointer movable.
 struct SendPtr(*mut std::ffi::c_void);
 unsafe impl Send for SendPtr {}
+unsafe impl Sync for SendPtr {}
 impl SendPtr {
     fn get(&self) -> *mut std::ffi::c_void {
         self.0
@@ -54,7 +60,7 @@ pub fn register(name: &str, f: RuleFn) -> i32 {
     }
     match rules().lock() {
         Ok(mut r) => {
-            r.insert(name.to_string(), f);
+            r.insert(name.to_string(), Arc::new(f));
             RTORCH_API_OK
         }
         Err(_) => err(RTORCH_API_E_RT, "rtorch_api: rule registry lock poisoned"),
@@ -75,9 +81,9 @@ pub fn register_c(name: &str, cf: RuleCFn, userdata: *mut std::ffi::c_void) -> i
         // bound at register; null falls back to the registered context.
         let effective = if ud.is_null() { sd.get() } else { ud };
         // Safety: `cf` came from the caller for a pointer-sized fn, and the
-        // caller contracted that it is valid.
-        unsafe { cf(inp.as_ptr(), inp.len(), out, effective) };
-        RTORCH_API_OK
+        // caller contracted that it is valid. The C callback now returns an
+        // `int rc` which we propagate up, so a C rule can report failures.
+        unsafe { cf(inp.as_ptr(), inp.len(), out, effective) }
     });
     register(name, f)
 }
@@ -87,18 +93,23 @@ pub fn exists(name: &str) -> bool {
     rules().lock().map(|r| r.contains_key(name)).unwrap_or(false)
 }
 
-/// Run a registered rule. `userdata` is passed through.
+/// Run a registered rule. `userdata` is passed through. The registry lock is
+/// released before the callback runs, so a callback may re-enter the registry and
+/// long callbacks do not block other threads.
 pub fn run(name: &str, inputs: &[crate::ffi::Blob], out: &mut crate::ffi::Blob, userdata: *mut std::ffi::c_void) -> i32 {
-    let guarded = match rules().lock() {
-        Ok(g) => g,
+    // Clone the Arc under the lock, then drop the guard before executing.
+    let entry = match rules().lock() {
+        Ok(g) => match g.get(name) {
+            Some(a) => Arc::clone(a),
+            None => {
+                return err(RTORCH_API_E_PARAM, &format!("rtorch_api: rule not found: {name}"));
+            }
+        },
         Err(PoisonError { .. }) => {
             return err(RTORCH_API_E_RT, "rtorch_api: rule registry lock poisoned");
         }
     };
-    match guarded.get(name) {
-        Some(f) => f(inputs, out, userdata),
-        None => err(RTORCH_API_E_PARAM, &format!("rtorch_api: rule not found: {name}")),
-    }
+    entry(inputs, out, userdata)
 }
 
 /// A test-friendly reset (not exposed over C ABI).
