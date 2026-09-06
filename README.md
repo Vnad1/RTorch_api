@@ -88,3 +88,10 @@ dotnet build csharp/RtApiSmoke/RtApiSmoke.csproj -c Release
   F64/I32 are rejected (`E_PARAM`) rather than silently stored as f32 (which would
   let a caller read the wrong element width).
 - Only the C ABI's declared surface is stable. RTorch core is never modified.
+
+## License
+
+RTorch_for_models_api is licensed under the **GNU Lesser General Public License,
+version 3.0 (LGPL-3.0)** — see `LICENSE`. It is a plug-in that links against
+RTorch (also LGPL-3.0) through its public API; the LGPL allows it to be used and
+relinked as a library.
